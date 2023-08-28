@@ -8,7 +8,6 @@
     <button @click="actions.changeMode('bezier')">Кривая</button>
     <button @click="actions.changeMode('box')">Прямоугольник</button>
     <button @click="actions.clearPaper">Стереть всё</button>
-    <div>is loop? {{ loopIsRunning }} </div>
   </div>
 </template>
   
@@ -22,7 +21,7 @@ const { roomCode } = useRoute().params
 
 const canvas = ref<HTMLCanvasElement | null>(null)
 const toolColor = ref<string>('black')
-
+let myId: number
 
 type EventHandler = (event: MouseEvent) => void
 const canvasHandlers = reactive<Record<'onMouseDown' | 'onMouseMove' | 'onMouseUp', EventHandler>>({
@@ -34,9 +33,12 @@ const canvasHandlers = reactive<Record<'onMouseDown' | 'onMouseMove' | 'onMouseU
 const mode = ref<DrawingMode>('brush')
 
 const drawnFigures: Record<string, unknown>[] = []
-const drawnFiguresWs: Record<string, unknown>[] = []
 
-let drawingFigure: DrawingBox | DrawingBrush | DrawingBezier | ClearBrush | null = null
+type DrawingFigure = (DrawingBox | DrawingBrush | DrawingBezier | ClearBrush) & { drawnBy: number }
+
+let drawingFigure: DrawingFigure | null = null
+
+const figuresInProgress: Record<number, DrawingFigure> = {}
 
 type DrawingBox = {
   type: 'box',
@@ -81,27 +83,32 @@ const modes = {
       onMouseDown: (event: MouseEvent) => {
 
         drawingFigure = {
+          drawnBy: myId,
           type: 'brush',
           stroke: toolColor.value,
           fill: toolColor.value,
           lineWidth: 5,
           points: [getCanvasPoint(event)]
         }
-
+        ws.send('drawing_figure', drawingFigure)
+        //redrawCanvas(canvas.value!.getContext('2d') as CanvasRenderingContext2D)
       },
       onMouseMove: (event: MouseEvent) => {
         if (!drawingFigure) return
         const fig = drawingFigure as DrawingBrush
         fig.points.push(getCanvasPoint(event))
+        ws.send('drawing_figure', drawingFigure)
+        //redrawCanvas(canvas.value!.getContext('2d') as CanvasRenderingContext2D)
         //ws.send('update_room', { room: roomCode, figure: fig })
       },
-      onMouseUp: async () => {
+      onMouseUp: async (event: MouseEvent) => {
         if (!drawingFigure) return
+        const fig = drawingFigure as DrawingBrush
+        fig.points.push(getCanvasPoint(event))
         drawnFigures.push(drawingFigure)
-
-        await api.putCanvas(roomCode as string, JSON.stringify(drawnFigures))
         drawingFigure = null
-
+        await api.putCanvas(roomCode as string, JSON.stringify(drawnFigures))
+        //redrawCanvas(canvas.value!.getContext('2d') as CanvasRenderingContext2D)
       },
     }
   },
@@ -109,6 +116,7 @@ const modes = {
     return {
       onMouseDown: (event: MouseEvent) => {
         drawingFigure = {
+          drawnBy: myId,
           type: 'clear',
           stroke: 'white',
           fill: 'white',
@@ -120,12 +128,13 @@ const modes = {
         if (!drawingFigure) return
         const fig = drawingFigure as ClearBrush
         fig.points.push(getCanvasPoint(event))
+        ws.send('drawing_figure', drawingFigure)
       },
       onMouseUp: async () => {
         if (!drawingFigure) return
         drawnFigures.push(drawingFigure)
-        await api.putCanvas(roomCode as string, JSON.stringify(drawnFigures))
         drawingFigure = null
+        await api.putCanvas(roomCode as string, JSON.stringify(drawnFigures))
       }
     }
   },
@@ -134,6 +143,7 @@ const modes = {
       onMouseDown: (event: MouseEvent) => {
         if (!drawingFigure) {
           drawingFigure = {
+            drawnBy: myId,
             type: 'bezier',
             stroke: toolColor.value,
             fill: toolColor.value,
@@ -161,8 +171,8 @@ const modes = {
         const fig = drawingFigure as DrawingBezier
         if (fig.points.length === 3) {
           drawnFigures.push(drawingFigure)
-          await api.putCanvas(roomCode as string, JSON.stringify(drawnFigures))
           drawingFigure = null
+          await api.putCanvas(roomCode as string, JSON.stringify(drawnFigures))
         }
       }
     }
@@ -171,6 +181,7 @@ const modes = {
     return {
       onMouseDown: (event: MouseEvent) => {
         drawingFigure = {
+          drawnBy: myId,
           type: 'box',
           stroke: toolColor.value,
           fill: toolColor.value,
@@ -183,13 +194,14 @@ const modes = {
         if (!drawingFigure) return
         const fig = drawingFigure as DrawingBox
         fig.secondPoint = getCanvasPoint(event)
+        ws.send('drawing_figure', drawingFigure)
+        
       },
       onMouseUp: async () => {
         if (!drawingFigure) return
         drawnFigures.push(drawingFigure)
-        await api.putCanvas(roomCode as string, JSON.stringify(drawnFigures))
         drawingFigure = null
-
+        await api.putCanvas(roomCode as string, JSON.stringify(drawnFigures))
       }
     }
   }
@@ -212,10 +224,8 @@ onMounted(async () => {
   const ctx = canvas.value.getContext('2d')
   if (!ctx) return
   const fig = await api.getCanvas(roomCode as string)
-  drawnFiguresWs.push(...fig.canvas)
   drawnFigures.push(...fig.canvas)
-  //drawnFigures.splice()
-
+  
 
   try {
     ws = await wsApi.connect(roomCode as string)
@@ -225,26 +235,23 @@ onMounted(async () => {
     return
   }
   ws.onmessage((data: any) => {
-
-    if (data.type === 'update_room') {
-
-      // if (data.payload.figure.type === 'box') {
-      //   drawBox(data.payload.figure as DrawingBox)
-      // } else if (data.payload.figure.type === 'brush') {
-
-      //   drawBrush(data.payload.figure)
-      // } else if (data.payload.figure.type === 'bezier') {
-      //   drawBezier(data.payload.figure as DrawingBezier)
-      // } else if (data.payload.figure.type === 'clear') {
-      //   clearBrush(data.payload.figure as ClearBrush)
-      // }
-      drawnFiguresWs.push(data.payload.figure)
+    if (data.type === 'connected') {
+      myId = data.payload
+    } else if (data.type === 'drawing_figure') {
+      const fig = data.payload as DrawingFigure
+      figuresInProgress[fig.drawnBy] = fig
+      //redrawCanvas(ctx)
+    } else if (data.type === 'update_room') {
+      const fig = data.payload.figure
+      if (fig.drawnBy !== myId) {
+        drawnFigures.push(fig)
+        delete figuresInProgress[fig.drawnBy]
+      }
+      //redrawCanvas(ctx)
     } else if (data.type === 'clear_room') {
-
       console.log('clear_room')
-      //drawnFiguresWs.splice(0, data.payload.length) ?
-      drawnFiguresWs.length = 0
-
+      drawnFigures.splice(0, drawnFigures.length)
+      //redrawCanvas(ctx)
     }
   })
   ws.onerror((event) => {
@@ -342,11 +349,10 @@ onMounted(async () => {
       ctx.closePath()
     }
   }
-
-  const loop = () => {
+  const redrawCanvas = () => {
     if (!ctx) return
     ctx.clearRect(0, 0, 800, 600)
-    for (const fig of drawnFiguresWs) {
+    for (const fig of drawnFigures) {
       if (fig.type === 'box') {
         drawBox(fig as DrawingBox)
       } else if (fig.type === 'brush') {
@@ -355,6 +361,17 @@ onMounted(async () => {
         drawBezier(fig as DrawingBezier)
       } else if (fig.type === 'clear') {
         clearBrush(fig as ClearBrush)
+      }
+    }
+    for (const fig of Object.values(figuresInProgress)) {
+      if (fig.type === 'box') {
+        drawBox(fig)
+      } else if (fig.type === 'brush') {
+        drawBrush(fig)
+      } else if (fig.type === 'bezier') {
+        drawBezier(fig)
+      } else if (fig.type === 'clear') {
+        clearBrush(fig)
       }
     }
     if (drawingFigure) {
@@ -368,12 +385,21 @@ onMounted(async () => {
         clearBrush(drawingFigure)
       }
     }
+  }
 
 
+
+  const loop = () => {
+    redrawCanvas()
     loopIsRunning && requestAnimationFrame(loop)
   }
   loop()
+  //redrawCanvas(ctx)
 })
+
+
+
+
 
 onUnmounted(() => {
   ws.close()
@@ -381,6 +407,122 @@ onUnmounted(() => {
   document.removeEventListener('mouseup', canvasHandlers.onMouseUp)
   document.removeEventListener('mousemove', canvasHandlers.onMouseMove)
 })
+
+// const redrawCanvas = (ctx: CanvasRenderingContext2D) => {
+//     if (!ctx) return
+//     ctx.clearRect(0, 0, 800, 600)
+//     for (const fig of drawnFigures) {
+//       if (fig.type === 'box') {
+//         drawBox(fig as DrawingBox, ctx)
+//       } else if (fig.type === 'brush', ctx) {
+//         drawBrush(fig as DrawingBrush, ctx)
+//       } else if (fig.type === 'bezier', ctx) {
+//         drawBezier(fig as DrawingBezier, ctx)
+//       } else if (fig.type === 'clear') {
+//         clearBrush(fig as ClearBrush, ctx)
+//       }
+//     }
+//     for (const fig of Object.values(figuresInProgress)) {
+//       if (fig.type === 'box') {
+//         drawBox(fig, ctx)
+//       } else if (fig.type === 'brush') {
+//         drawBrush(fig, ctx)
+//       } else if (fig.type === 'bezier') {
+//         drawBezier(fig, ctx)
+//       } else if (fig.type === 'clear') {
+//         clearBrush(fig, ctx)
+//       }
+//     }
+//     if (drawingFigure) {
+//       if (drawingFigure.type === 'box') {
+//         drawBox(drawingFigure, ctx)
+//       } else if (drawingFigure.type === 'brush') {
+//         drawBrush(drawingFigure, ctx)
+//       } else if (drawingFigure.type === 'bezier') {
+//         drawBezier(drawingFigure, ctx)
+//       } else if (drawingFigure.type === 'clear') {
+//         clearBrush(drawingFigure, ctx)
+//       }
+//     }
+//   }
+
+
+
+// const drawBox = (box: DrawingBox, ctx: CanvasRenderingContext2D) => {
+//     if (!box.secondPoint) return
+//     ctx.fillStyle = box.fill
+//     ctx.strokeStyle = box.stroke
+//     ctx.lineWidth = box.lineWidth
+//     ctx.beginPath()
+//     ctx.rect(...box.firstPoint, box.secondPoint[0] - box.firstPoint[0], box.secondPoint[1] - box.firstPoint[1])
+//     ctx.fill()
+//     ctx.closePath()
+//   }
+//   const drawBezier = (bez: DrawingBezier, ctx: CanvasRenderingContext2D) => {
+
+//     if (!bez.points) return
+
+//     if (bez.points.length !== 3) return
+//     ctx.fillStyle = bez.fill
+//     ctx.strokeStyle = bez.stroke
+//     ctx.lineWidth = bez.lineWidth
+
+//     ctx.beginPath()
+
+
+//     ctx.bezierCurveTo(bez.points[0][0], bez.points[0][1], bez.points[1][0], bez.points[1][1], bez.points[2][0], bez.points[2][1])
+
+//     ctx.stroke()
+//     ctx.closePath()
+//   }
+//   const drawBrush = (brush: DrawingBrush, ctx: CanvasRenderingContext2D) => {
+//     if (!brush.points) return
+//     ctx.fillStyle = brush.fill
+//     ctx.strokeStyle = brush.stroke
+//     ctx.lineWidth = brush.lineWidth
+//     ctx.beginPath()
+//     const [first, ...points] = brush.points
+//     //console.log('brush', brush.points.length)
+//     ctx.moveTo(...first)
+//     for (const [x, y] of points) {
+//       ctx.lineTo(x, y)
+
+//     }
+//     ctx.stroke()
+//     ctx.closePath()
+//     for (const [x, y] of brush.points) {
+//       ctx.beginPath()
+//       ctx.arc(x, y, 2.5, 0, Math.PI * 2)
+//       ctx.fill()
+//       ctx.closePath()
+//     }
+//   }
+//   const clearBrush = (clear: ClearBrush, ctx: CanvasRenderingContext2D) => {
+//     if (!clear.points) return
+//     ctx.fillStyle = clear.fill
+//     ctx.strokeStyle = clear.stroke
+//     ctx.lineWidth = clear.lineWidth
+//     ctx.beginPath()
+//     const [first, ...points] = clear.points
+//     ctx.moveTo(...first)
+//     for (const [x, y] of points) {
+//       ctx.lineTo(x, y)
+
+//     }
+//     ctx.stroke()
+//     ctx.closePath()
+//     for (const [x, y] of clear.points) {
+//       ctx.beginPath()
+//       ctx.arc(x, y, 2.5, 0, Math.PI * 2)
+//       ctx.fill()
+//       ctx.closePath()
+//     }
+//   }
+
+
+
+
+
 </script>
   
 <style scoped>
