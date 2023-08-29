@@ -90,6 +90,7 @@ const modes = {
           lineWidth: 5,
           points: [getCanvasPoint(event)]
         }
+        redrawCanvas()
         ws.send('drawing_figure', drawingFigure)
         //redrawCanvas(canvas.value!.getContext('2d') as CanvasRenderingContext2D)
       },
@@ -97,7 +98,9 @@ const modes = {
         if (!drawingFigure) return
         const fig = drawingFigure as DrawingBrush
         fig.points.push(getCanvasPoint(event))
+        redrawCanvas()
         ws.send('drawing_figure', drawingFigure)
+
         //redrawCanvas(canvas.value!.getContext('2d') as CanvasRenderingContext2D)
         //ws.send('update_room', { room: roomCode, figure: fig })
       },
@@ -107,6 +110,7 @@ const modes = {
         fig.points.push(getCanvasPoint(event))
         drawnFigures.push(drawingFigure)
         drawingFigure = null
+        redrawCanvas()
         await api.putCanvas(roomCode as string, JSON.stringify(drawnFigures))
         //redrawCanvas(canvas.value!.getContext('2d') as CanvasRenderingContext2D)
       },
@@ -123,17 +127,21 @@ const modes = {
           lineWidth: 30,
           points: [getCanvasPoint(event)]
         }
+        redrawCanvas()
+        ws.send('drawing_figure', drawingFigure) // check
       },
       onMouseMove: (event: MouseEvent) => {
         if (!drawingFigure) return
         const fig = drawingFigure as ClearBrush
         fig.points.push(getCanvasPoint(event))
+        redrawCanvas()
         ws.send('drawing_figure', drawingFigure)
       },
       onMouseUp: async () => {
         if (!drawingFigure) return
         drawnFigures.push(drawingFigure)
         drawingFigure = null
+        redrawCanvas()
         await api.putCanvas(roomCode as string, JSON.stringify(drawnFigures))
       }
     }
@@ -194,13 +202,15 @@ const modes = {
         if (!drawingFigure) return
         const fig = drawingFigure as DrawingBox
         fig.secondPoint = getCanvasPoint(event)
+        redrawCanvas()
         ws.send('drawing_figure', drawingFigure)
-        
+
       },
       onMouseUp: async () => {
         if (!drawingFigure) return
         drawnFigures.push(drawingFigure)
         drawingFigure = null
+        redrawCanvas()
         await api.putCanvas(roomCode as string, JSON.stringify(drawnFigures))
       }
     }
@@ -216,7 +226,7 @@ type Actions = {
 
 let actions = ref<Actions | null>(null)
 
-let loopIsRunning = true
+//let loopIsRunning = true
 let ws: Awaited<ReturnType<typeof wsApi.connect>>
 
 onMounted(async () => {
@@ -225,7 +235,7 @@ onMounted(async () => {
   if (!ctx) return
   const fig = await api.getCanvas(roomCode as string)
   drawnFigures.push(...fig.canvas)
-  
+
 
   try {
     ws = await wsApi.connect(roomCode as string)
@@ -240,25 +250,25 @@ onMounted(async () => {
     } else if (data.type === 'drawing_figure') {
       const fig = data.payload as DrawingFigure
       figuresInProgress[fig.drawnBy] = fig
-      //redrawCanvas(ctx)
+      redrawCanvas()
     } else if (data.type === 'update_room') {
       const fig = data.payload.figure
       if (fig.drawnBy !== myId) {
         drawnFigures.push(fig)
         delete figuresInProgress[fig.drawnBy]
       }
-      //redrawCanvas(ctx)
+      redrawCanvas()
     } else if (data.type === 'clear_room') {
       console.log('clear_room')
       drawnFigures.splice(0, drawnFigures.length)
-      //redrawCanvas(ctx)
+      redrawCanvas()
     }
   })
   ws.onerror((event) => {
     alert(`Ошибка установки соединения с ${event}`)
   })
   ws.onclose((event) => {
-
+    alert(`Ошибка ${event}`)
   })
   //console.log(vals)
   //drawnFigures.values = JSON.parse(vals) 
@@ -273,251 +283,254 @@ onMounted(async () => {
     },
     clearPaper: async () => {
       drawnFigures.splice(0, drawnFigures.length)
+      redrawCanvas()
       await api.putCanvas(roomCode as string, JSON.stringify(drawnFigures))
     }
   }
 
   actions.value.changeMode('brush')
 
-  const drawBox = (box: DrawingBox) => {
-    if (!box.secondPoint) return
-    ctx.fillStyle = box.fill
-    ctx.strokeStyle = box.stroke
-    ctx.lineWidth = box.lineWidth
+  // const drawBox = (box: DrawingBox) => {
+  //   if (!box.secondPoint) return
+  //   ctx.fillStyle = box.fill
+  //   ctx.strokeStyle = box.stroke
+  //   ctx.lineWidth = box.lineWidth
+  //   ctx.beginPath()
+  //   ctx.rect(...box.firstPoint, box.secondPoint[0] - box.firstPoint[0], box.secondPoint[1] - box.firstPoint[1])
+  //   ctx.fill()
+  //   ctx.closePath()
+  // }
+  // const drawBezier = (bez: DrawingBezier) => {
+
+  //   if (!bez.points) return
+
+  //   if (bez.points.length !== 3) return
+  //   ctx.fillStyle = bez.fill
+  //   ctx.strokeStyle = bez.stroke
+  //   ctx.lineWidth = bez.lineWidth
+
+  //   ctx.beginPath()
+
+
+  //   ctx.bezierCurveTo(bez.points[0][0], bez.points[0][1], bez.points[1][0], bez.points[1][1], bez.points[2][0], bez.points[2][1])
+
+  //   ctx.stroke()
+  //   ctx.closePath()
+  // }
+  // const drawBrush = (brush: DrawingBrush) => {
+  //   if (!brush.points) return
+  //   ctx.fillStyle = brush.fill
+  //   ctx.strokeStyle = brush.stroke
+  //   ctx.lineWidth = brush.lineWidth
+  //   ctx.beginPath()
+  //   const [first, ...points] = brush.points
+  //   //console.log('brush', brush.points.length)
+  //   ctx.moveTo(...first)
+  //   for (const [x, y] of points) {
+  //     ctx.lineTo(x, y)
+
+  //   }
+  //   ctx.stroke()
+  //   ctx.closePath()
+  //   for (const [x, y] of brush.points) {
+  //     ctx.beginPath()
+  //     ctx.arc(x, y, 2.5, 0, Math.PI * 2)
+  //     ctx.fill()
+  //     ctx.closePath()
+  //   }
+  // }
+  // const clearBrush = (clear: ClearBrush) => {
+  //   if (!clear.points) return
+  //   ctx.fillStyle = clear.fill
+  //   ctx.strokeStyle = clear.stroke
+  //   ctx.lineWidth = clear.lineWidth
+  //   ctx.beginPath()
+  //   const [first, ...points] = clear.points
+  //   ctx.moveTo(...first)
+  //   for (const [x, y] of points) {
+  //     ctx.lineTo(x, y)
+
+  //   }
+  //   ctx.stroke()
+  //   ctx.closePath()
+  //   for (const [x, y] of clear.points) {
+  //     ctx.beginPath()
+  //     ctx.arc(x, y, 2.5, 0, Math.PI * 2)
+  //     ctx.fill()
+  //     ctx.closePath()
+  //   }
+  // }
+  // const redrawCanvas = () => {
+  //   if (!ctx) return
+  //   ctx.clearRect(0, 0, 800, 600)
+  //   for (const fig of drawnFigures) {
+  //     if (fig.type === 'box') {
+  //       drawBox(fig as DrawingBox)
+  //     } else if (fig.type === 'brush') {
+  //       drawBrush(fig as DrawingBrush)
+  //     } else if (fig.type === 'bezier') {
+  //       drawBezier(fig as DrawingBezier)
+  //     } else if (fig.type === 'clear') {
+  //       clearBrush(fig as ClearBrush)
+  //     }
+  //   }
+  //   for (const fig of Object.values(figuresInProgress)) {
+  //     if (fig.type === 'box') {
+  //       drawBox(fig)
+  //     } else if (fig.type === 'brush') {
+  //       drawBrush(fig)
+  //     } else if (fig.type === 'bezier') {
+  //       drawBezier(fig)
+  //     } else if (fig.type === 'clear') {
+  //       clearBrush(fig)
+  //     }
+  //   }
+  //   if (drawingFigure) {
+  //     if (drawingFigure.type === 'box') {
+  //       drawBox(drawingFigure)
+  //     } else if (drawingFigure.type === 'brush') {
+  //       drawBrush(drawingFigure)
+  //     } else if (drawingFigure.type === 'bezier') {
+  //       drawBezier(drawingFigure)
+  //     } else if (drawingFigure.type === 'clear') {
+  //       clearBrush(drawingFigure)
+  //     }
+  //   }
+  // }
+
+
+
+  // const loop = () => {
+  //   redrawCanvas()
+  //   loopIsRunning && requestAnimationFrame(loop)
+  // }
+  // loop()
+  redrawCanvas()
+})
+
+
+
+const drawBox = (box: DrawingBox, ctx: CanvasRenderingContext2D) => {
+  if (!box.secondPoint) return
+  ctx.fillStyle = box.fill
+  ctx.strokeStyle = box.stroke
+  ctx.lineWidth = box.lineWidth
+  ctx.beginPath()
+  ctx.rect(...box.firstPoint, box.secondPoint[0] - box.firstPoint[0], box.secondPoint[1] - box.firstPoint[1])
+  ctx.fill()
+  ctx.closePath()
+}
+const drawBezier = (bez: DrawingBezier, ctx: CanvasRenderingContext2D) => {
+
+  if (!bez.points) return
+
+  if (bez.points.length !== 3) return
+  ctx.fillStyle = bez.fill
+  ctx.strokeStyle = bez.stroke
+  ctx.lineWidth = bez.lineWidth
+
+  ctx.beginPath()
+
+
+  ctx.bezierCurveTo(bez.points[0][0], bez.points[0][1], bez.points[1][0], bez.points[1][1], bez.points[2][0], bez.points[2][1])
+
+  ctx.stroke()
+  ctx.closePath()
+}
+const drawBrush = (brush: DrawingBrush, ctx: CanvasRenderingContext2D) => {
+  if (!brush.points) return
+  ctx.fillStyle = brush.fill
+  ctx.strokeStyle = brush.stroke
+  ctx.lineWidth = brush.lineWidth
+  ctx.beginPath()
+  const [first, ...points] = brush.points
+  //console.log('brush', brush.points.length)
+  ctx.moveTo(...first)
+  for (const [x, y] of points) {
+    ctx.lineTo(x, y)
+
+  }
+  ctx.stroke()
+  ctx.closePath()
+  for (const [x, y] of brush.points) {
     ctx.beginPath()
-    ctx.rect(...box.firstPoint, box.secondPoint[0] - box.firstPoint[0], box.secondPoint[1] - box.firstPoint[1])
+    ctx.arc(x, y, 2.5, 0, Math.PI * 2)
     ctx.fill()
     ctx.closePath()
   }
-  const drawBezier = (bez: DrawingBezier) => {
+}
+const clearBrush = (clear: ClearBrush, ctx: CanvasRenderingContext2D) => {
+  if (!clear.points) return
+  ctx.fillStyle = clear.fill
+  ctx.strokeStyle = clear.stroke
+  ctx.lineWidth = clear.lineWidth
+  ctx.beginPath()
+  const [first, ...points] = clear.points
+  ctx.moveTo(...first)
+  for (const [x, y] of points) {
+    ctx.lineTo(x, y)
 
-    if (!bez.points) return
-
-    if (bez.points.length !== 3) return
-    ctx.fillStyle = bez.fill
-    ctx.strokeStyle = bez.stroke
-    ctx.lineWidth = bez.lineWidth
-
+  }
+  ctx.stroke()
+  ctx.closePath()
+  for (const [x, y] of clear.points) {
     ctx.beginPath()
-
-
-    ctx.bezierCurveTo(bez.points[0][0], bez.points[0][1], bez.points[1][0], bez.points[1][1], bez.points[2][0], bez.points[2][1])
-
-    ctx.stroke()
+    ctx.arc(x, y, 2.5, 0, Math.PI * 2)
+    ctx.fill()
     ctx.closePath()
   }
-  const drawBrush = (brush: DrawingBrush) => {
-    if (!brush.points) return
-    ctx.fillStyle = brush.fill
-    ctx.strokeStyle = brush.stroke
-    ctx.lineWidth = brush.lineWidth
-    ctx.beginPath()
-    const [first, ...points] = brush.points
-    //console.log('brush', brush.points.length)
-    ctx.moveTo(...first)
-    for (const [x, y] of points) {
-      ctx.lineTo(x, y)
+}
 
-    }
-    ctx.stroke()
-    ctx.closePath()
-    for (const [x, y] of brush.points) {
-      ctx.beginPath()
-      ctx.arc(x, y, 2.5, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.closePath()
+
+
+const redrawCanvas = () => {
+  const ctx = canvas.value?.getContext('2d')
+  if (!ctx) return
+  ctx.clearRect(0, 0, 800, 600)
+  for (const fig of drawnFigures) {
+    if (fig.type === 'box') {
+      drawBox(fig as DrawingBox, ctx)
+    } else if (fig.type === 'brush') {
+      drawBrush(fig as DrawingBrush, ctx)
+    } else if (fig.type === 'bezier') {
+      drawBezier(fig as DrawingBezier, ctx)
+    } else if (fig.type === 'clear') {
+      clearBrush(fig as ClearBrush, ctx)
     }
   }
-  const clearBrush = (clear: ClearBrush) => {
-    if (!clear.points) return
-    ctx.fillStyle = clear.fill
-    ctx.strokeStyle = clear.stroke
-    ctx.lineWidth = clear.lineWidth
-    ctx.beginPath()
-    const [first, ...points] = clear.points
-    ctx.moveTo(...first)
-    for (const [x, y] of points) {
-      ctx.lineTo(x, y)
-
-    }
-    ctx.stroke()
-    ctx.closePath()
-    for (const [x, y] of clear.points) {
-      ctx.beginPath()
-      ctx.arc(x, y, 2.5, 0, Math.PI * 2)
-      ctx.fill()
-      ctx.closePath()
+  for (const fig of Object.values(figuresInProgress)) {
+    if (fig.type === 'box') {
+      drawBox(fig, ctx)
+    } else if (fig.type === 'brush') {
+      drawBrush(fig, ctx)
+    } else if (fig.type === 'bezier') {
+      drawBezier(fig, ctx)
+    } else if (fig.type === 'clear') {
+      clearBrush(fig, ctx)
     }
   }
-  const redrawCanvas = () => {
-    if (!ctx) return
-    ctx.clearRect(0, 0, 800, 600)
-    for (const fig of drawnFigures) {
-      if (fig.type === 'box') {
-        drawBox(fig as DrawingBox)
-      } else if (fig.type === 'brush') {
-        drawBrush(fig as DrawingBrush)
-      } else if (fig.type === 'bezier') {
-        drawBezier(fig as DrawingBezier)
-      } else if (fig.type === 'clear') {
-        clearBrush(fig as ClearBrush)
-      }
-    }
-    for (const fig of Object.values(figuresInProgress)) {
-      if (fig.type === 'box') {
-        drawBox(fig)
-      } else if (fig.type === 'brush') {
-        drawBrush(fig)
-      } else if (fig.type === 'bezier') {
-        drawBezier(fig)
-      } else if (fig.type === 'clear') {
-        clearBrush(fig)
-      }
-    }
-    if (drawingFigure) {
-      if (drawingFigure.type === 'box') {
-        drawBox(drawingFigure)
-      } else if (drawingFigure.type === 'brush') {
-        drawBrush(drawingFigure)
-      } else if (drawingFigure.type === 'bezier') {
-        drawBezier(drawingFigure)
-      } else if (drawingFigure.type === 'clear') {
-        clearBrush(drawingFigure)
-      }
+  if (drawingFigure) {
+    if (drawingFigure.type === 'box') {
+      drawBox(drawingFigure, ctx)
+    } else if (drawingFigure.type === 'brush') {
+      drawBrush(drawingFigure, ctx)
+    } else if (drawingFigure.type === 'bezier') {
+      drawBezier(drawingFigure, ctx)
+    } else if (drawingFigure.type === 'clear') {
+      clearBrush(drawingFigure, ctx)
     }
   }
-
-
-
-  const loop = () => {
-    redrawCanvas()
-    loopIsRunning && requestAnimationFrame(loop)
-  }
-  loop()
-  //redrawCanvas(ctx)
-})
-
+}
 
 
 
 
 onUnmounted(() => {
   ws.close()
-  loopIsRunning = false
+  //loopIsRunning = false
   document.removeEventListener('mouseup', canvasHandlers.onMouseUp)
   document.removeEventListener('mousemove', canvasHandlers.onMouseMove)
 })
-
-// const redrawCanvas = (ctx: CanvasRenderingContext2D) => {
-//     if (!ctx) return
-//     ctx.clearRect(0, 0, 800, 600)
-//     for (const fig of drawnFigures) {
-//       if (fig.type === 'box') {
-//         drawBox(fig as DrawingBox, ctx)
-//       } else if (fig.type === 'brush', ctx) {
-//         drawBrush(fig as DrawingBrush, ctx)
-//       } else if (fig.type === 'bezier', ctx) {
-//         drawBezier(fig as DrawingBezier, ctx)
-//       } else if (fig.type === 'clear') {
-//         clearBrush(fig as ClearBrush, ctx)
-//       }
-//     }
-//     for (const fig of Object.values(figuresInProgress)) {
-//       if (fig.type === 'box') {
-//         drawBox(fig, ctx)
-//       } else if (fig.type === 'brush') {
-//         drawBrush(fig, ctx)
-//       } else if (fig.type === 'bezier') {
-//         drawBezier(fig, ctx)
-//       } else if (fig.type === 'clear') {
-//         clearBrush(fig, ctx)
-//       }
-//     }
-//     if (drawingFigure) {
-//       if (drawingFigure.type === 'box') {
-//         drawBox(drawingFigure, ctx)
-//       } else if (drawingFigure.type === 'brush') {
-//         drawBrush(drawingFigure, ctx)
-//       } else if (drawingFigure.type === 'bezier') {
-//         drawBezier(drawingFigure, ctx)
-//       } else if (drawingFigure.type === 'clear') {
-//         clearBrush(drawingFigure, ctx)
-//       }
-//     }
-//   }
-
-
-
-// const drawBox = (box: DrawingBox, ctx: CanvasRenderingContext2D) => {
-//     if (!box.secondPoint) return
-//     ctx.fillStyle = box.fill
-//     ctx.strokeStyle = box.stroke
-//     ctx.lineWidth = box.lineWidth
-//     ctx.beginPath()
-//     ctx.rect(...box.firstPoint, box.secondPoint[0] - box.firstPoint[0], box.secondPoint[1] - box.firstPoint[1])
-//     ctx.fill()
-//     ctx.closePath()
-//   }
-//   const drawBezier = (bez: DrawingBezier, ctx: CanvasRenderingContext2D) => {
-
-//     if (!bez.points) return
-
-//     if (bez.points.length !== 3) return
-//     ctx.fillStyle = bez.fill
-//     ctx.strokeStyle = bez.stroke
-//     ctx.lineWidth = bez.lineWidth
-
-//     ctx.beginPath()
-
-
-//     ctx.bezierCurveTo(bez.points[0][0], bez.points[0][1], bez.points[1][0], bez.points[1][1], bez.points[2][0], bez.points[2][1])
-
-//     ctx.stroke()
-//     ctx.closePath()
-//   }
-//   const drawBrush = (brush: DrawingBrush, ctx: CanvasRenderingContext2D) => {
-//     if (!brush.points) return
-//     ctx.fillStyle = brush.fill
-//     ctx.strokeStyle = brush.stroke
-//     ctx.lineWidth = brush.lineWidth
-//     ctx.beginPath()
-//     const [first, ...points] = brush.points
-//     //console.log('brush', brush.points.length)
-//     ctx.moveTo(...first)
-//     for (const [x, y] of points) {
-//       ctx.lineTo(x, y)
-
-//     }
-//     ctx.stroke()
-//     ctx.closePath()
-//     for (const [x, y] of brush.points) {
-//       ctx.beginPath()
-//       ctx.arc(x, y, 2.5, 0, Math.PI * 2)
-//       ctx.fill()
-//       ctx.closePath()
-//     }
-//   }
-//   const clearBrush = (clear: ClearBrush, ctx: CanvasRenderingContext2D) => {
-//     if (!clear.points) return
-//     ctx.fillStyle = clear.fill
-//     ctx.strokeStyle = clear.stroke
-//     ctx.lineWidth = clear.lineWidth
-//     ctx.beginPath()
-//     const [first, ...points] = clear.points
-//     ctx.moveTo(...first)
-//     for (const [x, y] of points) {
-//       ctx.lineTo(x, y)
-
-//     }
-//     ctx.stroke()
-//     ctx.closePath()
-//     for (const [x, y] of clear.points) {
-//       ctx.beginPath()
-//       ctx.arc(x, y, 2.5, 0, Math.PI * 2)
-//       ctx.fill()
-//       ctx.closePath()
-//     }
-//   }
 
 
 
