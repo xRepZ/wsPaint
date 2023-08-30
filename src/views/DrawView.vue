@@ -69,7 +69,8 @@ type DrawingBezier = {
   stroke: string,
   fill: string,
   lineWidth: number,
-  points: [number, number][]
+  points: [number, number][],
+  click: number
 }
 
 const getCanvasPoint = (event: MouseEvent) => {
@@ -156,32 +157,50 @@ const modes = {
             stroke: toolColor.value,
             fill: toolColor.value,
             lineWidth: 10,
-            points: [getCanvasPoint(event)]
+            points: [getCanvasPoint(event)],
+            click: 1
           }
         } else {
           const fig = drawingFigure as DrawingBezier
           console.log("fig", fig)
-          if (fig.points.length !== 3) {
-            fig.points.push(getCanvasPoint(event))
-          } else {
-            fig.points.length = 0
-          }
+          fig.click++
+          //fig.points.push(getCanvasPoint(event))
+          // if (fig.points.length !== 3) {
+          //   fig.points.push(getCanvasPoint(event))
+          // } else {
+          //   fig.points.length = 0
+          // }
         }
-
+        redrawCanvas()
 
       },
-      onMouseMove: () => {
+      onMouseMove: (event: MouseEvent) => {
         if (!drawingFigure) return
+        //console.log("move")
+        const fig = drawingFigure as DrawingBezier
+
+        if (fig.click === 1) {
+          fig.points.splice(1, 1, getCanvasPoint(event))
+          console.log(fig.points[1])
+        } else {
+          fig.points.splice(2, 1, getCanvasPoint(event))
+          console.log(fig.points[2])
+        }
+        ws.send('drawing_figure', drawingFigure)
+
+        redrawCanvas()
 
       },
       onMouseUp: async () => {
         if (!drawingFigure) return
         const fig = drawingFigure as DrawingBezier
-        if (fig.points.length === 3) {
+        if (fig.click === 3) {
+          console.log("push", fig.points.length)
           drawnFigures.push(drawingFigure)
           drawingFigure = null
           await api.putCanvas(roomCode as string, JSON.stringify(drawnFigures))
         }
+        redrawCanvas()
       }
     }
   },
@@ -423,16 +442,22 @@ const drawBox = (box: DrawingBox, ctx: CanvasRenderingContext2D) => {
 const drawBezier = (bez: DrawingBezier, ctx: CanvasRenderingContext2D) => {
 
   if (!bez.points) return
-
-  if (bez.points.length !== 3) return
+  const len = bez.points.length
+  //if (bez.points.length !== 2) return
   ctx.fillStyle = bez.fill
   ctx.strokeStyle = bez.stroke
   ctx.lineWidth = bez.lineWidth
 
   ctx.beginPath()
 
+  // ctx.bezierCurveTo(bez.points[0][0], bez.points[0][1], bez.points[1][0], bez.points[1][1], bez.points[2][0], bez.points[2][1])
+  if (len === 3) {
+    ctx.bezierCurveTo(bez.points[0][0], bez.points[0][1], bez.points[1][0], bez.points[1][1], bez.points[2][0], bez.points[2][1])
+  } else if (len === 2) {
+    ctx.bezierCurveTo(bez.points[0][0], bez.points[0][1], bez.points[1][0], bez.points[1][1], bez.points[1][0], bez.points[1][1])
+  }
 
-  ctx.bezierCurveTo(bez.points[0][0], bez.points[0][1], bez.points[1][0], bez.points[1][1], bez.points[2][0], bez.points[2][1])
+
 
   ctx.stroke()
   ctx.closePath()
