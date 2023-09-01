@@ -102,7 +102,6 @@ const modes = {
         redrawCanvas()
         ws.send('drawing_figure', drawingFigure)
 
-        //redrawCanvas(canvas.value!.getContext('2d') as CanvasRenderingContext2D)
         //ws.send('update_room', { room: roomCode, figure: fig })
       },
       onMouseUp: async (event: MouseEvent) => {
@@ -178,14 +177,14 @@ const modes = {
         if (!drawingFigure) return
         //console.log("move")
         const fig = drawingFigure as DrawingBezier
-
-        if (fig.click === 1) {
-          fig.points.splice(1, 1, getCanvasPoint(event))
-          console.log(fig.points[1])
-        } else {
-          fig.points.splice(2, 1, getCanvasPoint(event))
-          console.log(fig.points[2])
-        }
+        fig.points.splice(fig.click, 1, getCanvasPoint(event))
+        // if (fig.click === 1) {
+        //   fig.points.splice(1, 1, getCanvasPoint(event))
+        //   console.log(fig.points[1])
+        // } else {
+        //   fig.points.splice(2, 1, getCanvasPoint(event))
+        //   console.log(fig.points[2])
+        // }
         ws.send('drawing_figure', drawingFigure)
 
         redrawCanvas()
@@ -289,8 +288,7 @@ onMounted(async () => {
   ws.onclose((event) => {
     alert(`Ошибка ${event}`)
   })
-  //console.log(vals)
-  //drawnFigures.values = JSON.parse(vals) 
+
   actions.value = {
     changeMode: (newMode: DrawingMode) => {
       mode.value = newMode
@@ -309,114 +307,7 @@ onMounted(async () => {
 
   actions.value.changeMode('brush')
 
-  // const drawBox = (box: DrawingBox) => {
-  //   if (!box.secondPoint) return
-  //   ctx.fillStyle = box.fill
-  //   ctx.strokeStyle = box.stroke
-  //   ctx.lineWidth = box.lineWidth
-  //   ctx.beginPath()
-  //   ctx.rect(...box.firstPoint, box.secondPoint[0] - box.firstPoint[0], box.secondPoint[1] - box.firstPoint[1])
-  //   ctx.fill()
-  //   ctx.closePath()
-  // }
-  // const drawBezier = (bez: DrawingBezier) => {
-
-  //   if (!bez.points) return
-
-  //   if (bez.points.length !== 3) return
-  //   ctx.fillStyle = bez.fill
-  //   ctx.strokeStyle = bez.stroke
-  //   ctx.lineWidth = bez.lineWidth
-
-  //   ctx.beginPath()
-
-
-  //   ctx.bezierCurveTo(bez.points[0][0], bez.points[0][1], bez.points[1][0], bez.points[1][1], bez.points[2][0], bez.points[2][1])
-
-  //   ctx.stroke()
-  //   ctx.closePath()
-  // }
-  // const drawBrush = (brush: DrawingBrush) => {
-  //   if (!brush.points) return
-  //   ctx.fillStyle = brush.fill
-  //   ctx.strokeStyle = brush.stroke
-  //   ctx.lineWidth = brush.lineWidth
-  //   ctx.beginPath()
-  //   const [first, ...points] = brush.points
-  //   //console.log('brush', brush.points.length)
-  //   ctx.moveTo(...first)
-  //   for (const [x, y] of points) {
-  //     ctx.lineTo(x, y)
-
-  //   }
-  //   ctx.stroke()
-  //   ctx.closePath()
-  //   for (const [x, y] of brush.points) {
-  //     ctx.beginPath()
-  //     ctx.arc(x, y, 2.5, 0, Math.PI * 2)
-  //     ctx.fill()
-  //     ctx.closePath()
-  //   }
-  // }
-  // const clearBrush = (clear: ClearBrush) => {
-  //   if (!clear.points) return
-  //   ctx.fillStyle = clear.fill
-  //   ctx.strokeStyle = clear.stroke
-  //   ctx.lineWidth = clear.lineWidth
-  //   ctx.beginPath()
-  //   const [first, ...points] = clear.points
-  //   ctx.moveTo(...first)
-  //   for (const [x, y] of points) {
-  //     ctx.lineTo(x, y)
-
-  //   }
-  //   ctx.stroke()
-  //   ctx.closePath()
-  //   for (const [x, y] of clear.points) {
-  //     ctx.beginPath()
-  //     ctx.arc(x, y, 2.5, 0, Math.PI * 2)
-  //     ctx.fill()
-  //     ctx.closePath()
-  //   }
-  // }
-  // const redrawCanvas = () => {
-  //   if (!ctx) return
-  //   ctx.clearRect(0, 0, 800, 600)
-  //   for (const fig of drawnFigures) {
-  //     if (fig.type === 'box') {
-  //       drawBox(fig as DrawingBox)
-  //     } else if (fig.type === 'brush') {
-  //       drawBrush(fig as DrawingBrush)
-  //     } else if (fig.type === 'bezier') {
-  //       drawBezier(fig as DrawingBezier)
-  //     } else if (fig.type === 'clear') {
-  //       clearBrush(fig as ClearBrush)
-  //     }
-  //   }
-  //   for (const fig of Object.values(figuresInProgress)) {
-  //     if (fig.type === 'box') {
-  //       drawBox(fig)
-  //     } else if (fig.type === 'brush') {
-  //       drawBrush(fig)
-  //     } else if (fig.type === 'bezier') {
-  //       drawBezier(fig)
-  //     } else if (fig.type === 'clear') {
-  //       clearBrush(fig)
-  //     }
-  //   }
-  //   if (drawingFigure) {
-  //     if (drawingFigure.type === 'box') {
-  //       drawBox(drawingFigure)
-  //     } else if (drawingFigure.type === 'brush') {
-  //       drawBrush(drawingFigure)
-  //     } else if (drawingFigure.type === 'bezier') {
-  //       drawBezier(drawingFigure)
-  //     } else if (drawingFigure.type === 'clear') {
-  //       clearBrush(drawingFigure)
-  //     }
-  //   }
-  // }
-
+ 
 
 
   // const loop = () => {
