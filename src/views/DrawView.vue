@@ -20,9 +20,9 @@ import wsApi from '../api/ws.js'
 const { roomCode } = useRoute().params
 
 const canvas = ref<HTMLCanvasElement | null>(null)
+let ctx: CanvasRenderingContext2D
 const toolColor = ref<string>('black')
 let myId: number
-
 type EventHandler = (event: MouseEvent) => void
 const canvasHandlers = reactive<Record<'onMouseDown' | 'onMouseMove' | 'onMouseUp', EventHandler>>({
   onMouseDown: () => { },
@@ -32,13 +32,20 @@ const canvasHandlers = reactive<Record<'onMouseDown' | 'onMouseMove' | 'onMouseU
 
 const mode = ref<DrawingMode>('brush')
 
-const drawnFigures: Record<string, unknown>[] = []
-
-type DrawingFigure = (DrawingBox | DrawingBrush | DrawingBezier | ClearBrush) & { drawnBy: number }
+type DrawingFigure = (DrawingBox | DrawingBrush | DrawingBezier | ClearBrush ) & { drawnBy: number }
 
 let drawingFigure: DrawingFigure | null = null
 
+type ImageFigure = {
+  type: 'image',
+  dataUrl: string,
+  image: HTMLImageElement
+}
+
+const drawnFigures: (DrawingFigure | ImageFigure)[] = []
+
 const figuresInProgress: Record<number, DrawingFigure> = {}
+const maxSize = 200
 
 type DrawingBox = {
   type: 'box',
@@ -69,13 +76,31 @@ type DrawingBezier = {
   stroke: string,
   fill: string,
   lineWidth: number,
-  points: [number, number][],
-  click: number
+  startPoint: [number, number],
+  endPoint: [number, number],
+  centerPoint: [number, number] | null,
+  state: 'line' | 'curve'
 }
 
 const getCanvasPoint = (event: MouseEvent) => {
   const { x, y } = canvas.value!.getBoundingClientRect()
   return [event.clientX - x, event.clientY - y] as [number, number]
+}
+
+const calcFiguresSize = () => {
+  let points = 0
+  for (const fig of drawnFigures) {
+    if (fig.type === 'brush' || fig.type === 'clear') {
+      points += fig.points.length
+    }
+    else if (fig.type === 'box') {
+      points += 4
+    }
+    else if (fig.type === 'bezier') {
+      points += 3
+    }
+  }
+  return points
 }
 
 const modes = {
@@ -93,7 +118,7 @@ const modes = {
         }
         redrawCanvas()
         ws.send('drawing_figure', drawingFigure)
-        //redrawCanvas(canvas.value!.getContext('2d') as CanvasRenderingContext2D)
+
       },
       onMouseMove: (event: MouseEvent) => {
         if (!drawingFigure) return
@@ -101,8 +126,6 @@ const modes = {
         fig.points.push(getCanvasPoint(event))
         redrawCanvas()
         ws.send('drawing_figure', drawingFigure)
-
-        //ws.send('update_room', { room: roomCode, figure: fig })
       },
       onMouseUp: async (event: MouseEvent) => {
         if (!drawingFigure) return
@@ -110,9 +133,15 @@ const modes = {
         fig.points.push(getCanvasPoint(event))
         drawnFigures.push(drawingFigure)
         drawingFigure = null
-        redrawCanvas()
+        if (calcFiguresSize() > maxSize) {
+          saveCanvas()
+        }
+        else {
+          redrawCanvas()
+        }
+
         await api.putCanvas(roomCode as string, JSON.stringify(drawnFigures))
-        //redrawCanvas(canvas.value!.getContext('2d') as CanvasRenderingContext2D)
+
       },
     }
   },
@@ -128,7 +157,7 @@ const modes = {
           points: [getCanvasPoint(event)]
         }
         redrawCanvas()
-        ws.send('drawing_figure', drawingFigure) // check
+        ws.send('drawing_figure', drawingFigure)
       },
       onMouseMove: (event: MouseEvent) => {
         if (!drawingFigure) return
@@ -141,7 +170,12 @@ const modes = {
         if (!drawingFigure) return
         drawnFigures.push(drawingFigure)
         drawingFigure = null
-        redrawCanvas()
+        if (calcFiguresSize() > maxSize) {
+          saveCanvas()
+        }
+        else {
+          redrawCanvas()
+        }
         await api.putCanvas(roomCode as string, JSON.stringify(drawnFigures))
       }
     }
@@ -156,50 +190,48 @@ const modes = {
             stroke: toolColor.value,
             fill: toolColor.value,
             lineWidth: 10,
-            points: [getCanvasPoint(event)],
-            click: 1
+            startPoint: getCanvasPoint(event),
+            endPoint: getCanvasPoint(event),
+            centerPoint: null,
+            state: 'line'
           }
-        } else {
-          const fig = drawingFigure as DrawingBezier
-          console.log("fig", fig)
-          fig.click++
-          //fig.points.push(getCanvasPoint(event))
-          // if (fig.points.length !== 3) {
-          //   fig.points.push(getCanvasPoint(event))
-          // } else {
-          //   fig.points.length = 0
-          // }
         }
         redrawCanvas()
-
       },
       onMouseMove: (event: MouseEvent) => {
         if (!drawingFigure) return
-        //console.log("move")
         const fig = drawingFigure as DrawingBezier
-        fig.points.splice(fig.click, 1, getCanvasPoint(event))
-        // if (fig.click === 1) {
-        //   fig.points.splice(1, 1, getCanvasPoint(event))
-        //   console.log(fig.points[1])
-        // } else {
-        //   fig.points.splice(2, 1, getCanvasPoint(event))
-        //   console.log(fig.points[2])
-        // }
+        if (fig.state === 'line') {
+          fig.endPoint = getCanvasPoint(event)
+        }
+        else {
+          fig.centerPoint = getCanvasPoint(event)
+        }
         ws.send('drawing_figure', drawingFigure)
 
         redrawCanvas()
 
       },
-      onMouseUp: async () => {
+      onMouseUp: async (event: MouseEvent) => {
         if (!drawingFigure) return
         const fig = drawingFigure as DrawingBezier
-        if (fig.click === 3) {
-          console.log("push", fig.points.length)
+        if (fig.state === 'line') {
+          fig.endPoint = getCanvasPoint(event)
+          fig.centerPoint = getCanvasPoint(event)
+          fig.state = 'curve'
+        }
+        else {
+          fig.centerPoint = getCanvasPoint(event)
           drawnFigures.push(drawingFigure)
           drawingFigure = null
+          if (calcFiguresSize() > maxSize) {
+            saveCanvas()
+          }
+          else {
+            redrawCanvas()
+          }
           await api.putCanvas(roomCode as string, JSON.stringify(drawnFigures))
         }
-        redrawCanvas()
       }
     }
   },
@@ -228,7 +260,12 @@ const modes = {
         if (!drawingFigure) return
         drawnFigures.push(drawingFigure)
         drawingFigure = null
-        redrawCanvas()
+        if (calcFiguresSize() > maxSize) {
+          saveCanvas()
+        }
+        else {
+          redrawCanvas()
+        }
         await api.putCanvas(roomCode as string, JSON.stringify(drawnFigures))
       }
     }
@@ -244,17 +281,23 @@ type Actions = {
 
 let actions = ref<Actions | null>(null)
 
-//let loopIsRunning = true
 let ws: Awaited<ReturnType<typeof wsApi.connect>>
 
 onMounted(async () => {
   if (!canvas.value) return
-  const ctx = canvas.value.getContext('2d')
+  ctx = canvas.value.getContext('2d') as CanvasRenderingContext2D
   if (!ctx) return
+
   const fig = await api.getCanvas(roomCode as string)
   drawnFigures.push(...fig.canvas)
-
-
+  if (drawnFigures[0] && drawnFigures[0].type === "image") { // ecли пришла картинка
+    const imageFig = drawnFigures[0]
+    await new Promise<void>((resolve) => {
+      imageFig.image = new Image(canvas.value!.width, canvas.value!.height)
+      imageFig.image.src = imageFig.dataUrl
+      imageFig.image.onload = () => resolve()
+    })
+  }
   try {
     ws = await wsApi.connect(roomCode as string)
   } catch (err: unknown) {
@@ -263,22 +306,43 @@ onMounted(async () => {
     return
   }
   ws.onmessage((data: any) => {
+    console.log(data.type)
     if (data.type === 'connected') {
       myId = data.payload
     } else if (data.type === 'drawing_figure') {
       const fig = data.payload as DrawingFigure
       figuresInProgress[fig.drawnBy] = fig
       redrawCanvas()
+    } else if (data.type === 'saved_canvas') {
+
+      console.log("ws check", data.payload)
+      const image = new Image(canvas.value!.width, canvas.value!.height)
+      image.src = data.payload
+      drawnFigures.splice(0, drawnFigures.length, {
+        type: 'image',
+        dataUrl: data.payload,
+        image
+      })
+      image.onload = () => redrawCanvas()
     } else if (data.type === 'update_room') {
-      const fig = data.payload.figure
-      if (fig.drawnBy !== myId) {
+      const fig = data.payload.figure as DrawingFigure | ImageFigure
+      if (fig.type === 'image') {
+        fig.image = new Image()
+        fig.image.src = fig.dataUrl
+        fig.image.onload = () => redrawCanvas()
+        drawnFigures.splice(0, drawnFigures.length, fig)
+      } else if (fig.drawnBy !== myId) {
+        if (fig.type)
         drawnFigures.push(fig)
         delete figuresInProgress[fig.drawnBy]
+        redrawCanvas()
       }
-      redrawCanvas()
     } else if (data.type === 'clear_room') {
       console.log('clear_room')
       drawnFigures.splice(0, drawnFigures.length)
+      for (const key in figuresInProgress) {
+        delete figuresInProgress[key]
+      }
       redrawCanvas()
     }
   })
@@ -301,20 +365,11 @@ onMounted(async () => {
     clearPaper: async () => {
       drawnFigures.splice(0, drawnFigures.length)
       redrawCanvas()
-      await api.putCanvas(roomCode as string, JSON.stringify(drawnFigures))
+      await api.putCanvas(roomCode as string, '[]')
     }
   }
 
   actions.value.changeMode('brush')
-
- 
-
-
-  // const loop = () => {
-  //   redrawCanvas()
-  //   loopIsRunning && requestAnimationFrame(loop)
-  // }
-  // loop()
   redrawCanvas()
 })
 
@@ -331,25 +386,18 @@ const drawBox = (box: DrawingBox, ctx: CanvasRenderingContext2D) => {
   ctx.closePath()
 }
 const drawBezier = (bez: DrawingBezier, ctx: CanvasRenderingContext2D) => {
-
-  if (!bez.points) return
-  const len = bez.points.length
-  //if (bez.points.length !== 2) return
   ctx.fillStyle = bez.fill
   ctx.strokeStyle = bez.stroke
   ctx.lineWidth = bez.lineWidth
 
   ctx.beginPath()
 
-  // ctx.bezierCurveTo(bez.points[0][0], bez.points[0][1], bez.points[1][0], bez.points[1][1], bez.points[2][0], bez.points[2][1])
-  if (len === 3) {
-    ctx.bezierCurveTo(bez.points[0][0], bez.points[0][1], bez.points[1][0], bez.points[1][1], bez.points[2][0], bez.points[2][1])
-  } else if (len === 2) {
-    ctx.bezierCurveTo(bez.points[0][0], bez.points[0][1], bez.points[1][0], bez.points[1][1], bez.points[1][0], bez.points[1][1])
+  if (bez.state === 'line') {
+    ctx.moveTo(...bez.startPoint)
+    ctx.lineTo(...bez.endPoint)
+  } else {
+    ctx.bezierCurveTo(...bez.startPoint, ...bez.centerPoint!, ...bez.endPoint)
   }
-
-
-
   ctx.stroke()
   ctx.closePath()
 }
@@ -358,19 +406,21 @@ const drawBrush = (brush: DrawingBrush, ctx: CanvasRenderingContext2D) => {
   ctx.fillStyle = brush.fill
   ctx.strokeStyle = brush.stroke
   ctx.lineWidth = brush.lineWidth
-  ctx.beginPath()
-  const [first, ...points] = brush.points
-  //console.log('brush', brush.points.length)
-  ctx.moveTo(...first)
-  for (const [x, y] of points) {
-    ctx.lineTo(x, y)
 
+  const [first, ...points] = brush.points
+  let [px, py] = first
+  for (const [x, y] of points) {
+    ctx.beginPath()
+    ctx.moveTo(px, py)
+    ctx.lineTo(x, y)
+    ctx.stroke()
+    ctx.closePath()
+    px = x
+    py = y
   }
-  ctx.stroke()
-  ctx.closePath()
   for (const [x, y] of brush.points) {
     ctx.beginPath()
-    ctx.arc(x, y, 2.5, 0, Math.PI * 2)
+    ctx.arc(x, y, brush.lineWidth / 2, 0, Math.PI * 2)
     ctx.fill()
     ctx.closePath()
   }
@@ -380,62 +430,95 @@ const clearBrush = (clear: ClearBrush, ctx: CanvasRenderingContext2D) => {
   ctx.fillStyle = clear.fill
   ctx.strokeStyle = clear.stroke
   ctx.lineWidth = clear.lineWidth
-  ctx.beginPath()
   const [first, ...points] = clear.points
-  ctx.moveTo(...first)
+  let [px, py] = first
   for (const [x, y] of points) {
+    ctx.beginPath()
+    ctx.moveTo(px, py)
     ctx.lineTo(x, y)
-
+    ctx.stroke()
+    ctx.closePath()
+    px = x
+    py = y
   }
-  ctx.stroke()
-  ctx.closePath()
   for (const [x, y] of clear.points) {
     ctx.beginPath()
-    ctx.arc(x, y, 2.5, 0, Math.PI * 2)
+    ctx.arc(x, y, clear.lineWidth / 2, 0, Math.PI * 2)
     ctx.fill()
     ctx.closePath()
   }
 }
+const drawBackgroundImage = (image: HTMLImageElement, ctx: CanvasRenderingContext2D) => {
+  ctx.drawImage(image, 0, 0)
+}
 
 
+const saveCanvas = () => {
+  if (!canvas.value) return
+  const dataUrl = canvas.value!.toDataURL()
 
+  ws.send('saved_canvas', dataUrl)
+  const image = new Image(canvas.value!.width, canvas.value!.height)
+  image.src = dataUrl
+  drawnFigures.splice(0, drawnFigures.length, {
+    type: 'image',
+    dataUrl,
+    image
+  })
+  image.onload = () => redrawCanvas()
+}
+
+let needRedraw = false
 const redrawCanvas = () => {
-  const ctx = canvas.value?.getContext('2d')
-  if (!ctx) return
-  ctx.clearRect(0, 0, 800, 600)
-  for (const fig of drawnFigures) {
-    if (fig.type === 'box') {
-      drawBox(fig as DrawingBox, ctx)
-    } else if (fig.type === 'brush') {
-      drawBrush(fig as DrawingBrush, ctx)
-    } else if (fig.type === 'bezier') {
-      drawBezier(fig as DrawingBezier, ctx)
-    } else if (fig.type === 'clear') {
-      clearBrush(fig as ClearBrush, ctx)
+  if (needRedraw || !ctx) return
+  needRedraw = true
+  //const back = drawnFigures[0]
+  // if (back && back.type === "image") {
+  //   const image = new Image(canvas.value!.width, canvas.value!.height)
+  //   image.src = back.image
+  //   drawBackgroundImage(image, ctx)
+  //   console.log("redraw")
+  // }
+
+  requestAnimationFrame(() => {
+    ctx.clearRect(0, 0, 800, 600)
+    for (const fig of drawnFigures) {
+      if (fig.type === 'box') {
+        drawBox(fig as DrawingBox, ctx)
+      } else if (fig.type === 'brush') {
+        drawBrush(fig as DrawingBrush, ctx)
+      } else if (fig.type === 'bezier') {
+        drawBezier(fig as DrawingBezier, ctx)
+      } else if (fig.type === 'clear') {
+        clearBrush(fig as ClearBrush, ctx)
+      } else if (fig.type === 'image') {
+        drawBackgroundImage(fig.image, ctx)
+      }
     }
-  }
-  for (const fig of Object.values(figuresInProgress)) {
-    if (fig.type === 'box') {
-      drawBox(fig, ctx)
-    } else if (fig.type === 'brush') {
-      drawBrush(fig, ctx)
-    } else if (fig.type === 'bezier') {
-      drawBezier(fig, ctx)
-    } else if (fig.type === 'clear') {
-      clearBrush(fig, ctx)
+    for (const fig of Object.values(figuresInProgress)) {
+      if (fig.type === 'box') {
+        drawBox(fig, ctx)
+      } else if (fig.type === 'brush') {
+        drawBrush(fig, ctx)
+      } else if (fig.type === 'bezier') {
+        drawBezier(fig, ctx)
+      } else if (fig.type === 'clear') {
+        clearBrush(fig, ctx)
+      }
     }
-  }
-  if (drawingFigure) {
-    if (drawingFigure.type === 'box') {
-      drawBox(drawingFigure, ctx)
-    } else if (drawingFigure.type === 'brush') {
-      drawBrush(drawingFigure, ctx)
-    } else if (drawingFigure.type === 'bezier') {
-      drawBezier(drawingFigure, ctx)
-    } else if (drawingFigure.type === 'clear') {
-      clearBrush(drawingFigure, ctx)
+    if (drawingFigure) {
+      if (drawingFigure.type === 'box') {
+        drawBox(drawingFigure, ctx)
+      } else if (drawingFigure.type === 'brush') {
+        drawBrush(drawingFigure, ctx)
+      } else if (drawingFigure.type === 'bezier') {
+        drawBezier(drawingFigure, ctx)
+      } else if (drawingFigure.type === 'clear') {
+        clearBrush(drawingFigure, ctx)
+      } 
     }
-  }
+    needRedraw = false
+  })
 }
 
 
