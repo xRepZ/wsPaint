@@ -5,7 +5,7 @@ export default {
     async connect(roomCode: string) {
         const ws = await new Promise<WebSocket>((resolve, reject) => {
             //const ws = new WebSocket("ws://todo.my/api/ws")
-            const ws = new WebSocket("ws://185.104.113.43/api/ws")
+            const ws = new WebSocket("wss://drawingwss.freemyip.com/api/ws")
             ws.onopen = () => {
                 console.log(roomCode)
                

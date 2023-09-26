@@ -1,13 +1,27 @@
 <template>
-  <canvas class="canvas" tabindex="1" ref="canvas" width="800" height="600" @mousedown="canvasHandlers.onMouseDown">
-  </canvas>
-  <div v-if="actions">
-    <input type="color" v-model="toolColor">
-    <button @click="actions.changeMode('brush')">Кисть</button>
+  <div class="d-flex mt-20">
+    <div v-if="actions" class="vertical-menu">
+
+      <!-- <button @click="actions.changeMode('brush')">Кисть</button>
     <button @click="actions.changeMode('clear')">Ластик</button>
     <button @click="actions.changeMode('bezier')">Кривая</button>
     <button @click="actions.changeMode('box')">Прямоугольник</button>
-    <button @click="actions.clearPaper">Стереть всё</button>
+    <button @click="actions.clearPaper">Стереть всё</button> -->
+
+
+      <a @click="actions.changeMode('brush')" :class="{ active: mode === 'brush' }">Кисть</a>
+      <a @click="actions.changeMode('clear')" :class="{ active: mode === 'clear' }">Ластик</a>
+      <a @click="actions.changeMode('bezier')" :class="{ active: mode === 'bezier' }">Кривая</a>
+      <a @click="actions.changeMode('box')" :class="{ active: mode === 'box' }">Прямоугольник</a>
+      <a @click="actions.clearPaper">Стереть всё</a>
+      <div class="ml-10 mt-10"> Цвет:
+        <input class="mt-10" type="color" v-model="toolColor">
+      </div>
+
+    </div>
+    <canvas class="canvas" tabindex="1" ref="canvas" width="800" height="600" @mousedown="canvasHandlers.onMouseDown">
+    </canvas>
+
   </div>
 </template>
   
@@ -32,7 +46,7 @@ const canvasHandlers = reactive<Record<'onMouseDown' | 'onMouseMove' | 'onMouseU
 
 const mode = ref<DrawingMode>('brush')
 
-type DrawingFigure = (DrawingBox | DrawingBrush | DrawingBezier | ClearBrush ) & { drawnBy: number }
+type DrawingFigure = (DrawingBox | DrawingBrush | DrawingBezier | ClearBrush) & { drawnBy: number }
 
 let drawingFigure: DrawingFigure | null = null
 
@@ -306,7 +320,6 @@ onMounted(async () => {
     return
   }
   ws.onmessage((data: any) => {
-    console.log(data.type)
     if (data.type === 'connected') {
       myId = data.payload
     } else if (data.type === 'drawing_figure') {
@@ -315,7 +328,6 @@ onMounted(async () => {
       redrawCanvas()
     } else if (data.type === 'saved_canvas') {
 
-      console.log("ws check", data.payload)
       const image = new Image(canvas.value!.width, canvas.value!.height)
       image.src = data.payload
       drawnFigures.splice(0, drawnFigures.length, {
@@ -333,7 +345,7 @@ onMounted(async () => {
         drawnFigures.splice(0, drawnFigures.length, fig)
       } else if (fig.drawnBy !== myId) {
         if (fig.type)
-        drawnFigures.push(fig)
+          drawnFigures.push(fig)
         delete figuresInProgress[fig.drawnBy]
         redrawCanvas()
       }
@@ -349,8 +361,8 @@ onMounted(async () => {
   ws.onerror((event) => {
     alert(`Ошибка установки соединения с ${event}`)
   })
-  ws.onclose((event) => {
-    alert(`Ошибка ${event}`)
+  ws.onclose(() => {
+    console.log(`Соединение закрыто`)
   })
 
   actions.value = {
@@ -472,14 +484,6 @@ let needRedraw = false
 const redrawCanvas = () => {
   if (needRedraw || !ctx) return
   needRedraw = true
-  //const back = drawnFigures[0]
-  // if (back && back.type === "image") {
-  //   const image = new Image(canvas.value!.width, canvas.value!.height)
-  //   image.src = back.image
-  //   drawBackgroundImage(image, ctx)
-  //   console.log("redraw")
-  // }
-
   requestAnimationFrame(() => {
     ctx.clearRect(0, 0, 800, 600)
     for (const fig of drawnFigures) {
@@ -515,7 +519,7 @@ const redrawCanvas = () => {
         drawBezier(drawingFigure, ctx)
       } else if (drawingFigure.type === 'clear') {
         clearBrush(drawingFigure, ctx)
-      } 
+      }
     }
     needRedraw = false
   })
@@ -544,6 +548,8 @@ onUnmounted(() => {
   border: 1px solid black;
   display: block;
   margin: 0 auto;
+  cursor: crosshair;
+  background-color: white;
 }
 </style>
   
